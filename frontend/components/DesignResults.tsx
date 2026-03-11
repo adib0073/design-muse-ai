@@ -22,9 +22,10 @@ interface DesignResult {
 
 interface Props {
   result: DesignResult;
+  imageProgress?: { completed: number; total: number } | null;
 }
 
-export default function DesignResults({ result }: Props) {
+export default function DesignResults({ result, imageProgress }: Props) {
   const [lightbox, setLightbox] = useState<{
     url: string;
     room: RoomDesign;
@@ -47,12 +48,36 @@ export default function DesignResults({ result }: Props) {
   return (
     <div className="space-y-6">
       <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
-        <h2 className="text-xl font-bold mb-2">{result.theme} Design</h2>
+        <h2 className="text-xl font-bold mb-2">
+          Your {result.theme} Design &mdash; {result.rooms.length} Spaces
+        </h2>
         <p className="text-gray-400 text-sm">{result.floor_plan_analysis}</p>
         {result.overall_style_notes && (
           <p className="text-gray-300 text-sm mt-3 italic">
             {result.overall_style_notes}
           </p>
+        )}
+
+        {/* Image generation progress bar */}
+        {imageProgress && imageProgress.total > 0 && (
+          <div className="mt-4">
+            <div className="flex items-center justify-between text-xs text-gray-400 mb-1.5">
+              <span>
+                Generating images: {imageProgress.completed} / {imageProgress.total} spaces
+              </span>
+              <span>
+                {Math.round((imageProgress.completed / imageProgress.total) * 100)}%
+              </span>
+            </div>
+            <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-500 ease-out"
+                style={{
+                  width: `${(imageProgress.completed / imageProgress.total) * 100}%`,
+                }}
+              />
+            </div>
+          </div>
         )}
       </div>
 
@@ -61,6 +86,11 @@ export default function DesignResults({ result }: Props) {
           <RoomCard
             key={room.room_name}
             room={room}
+            isGenerating={
+              imageProgress !== null &&
+              imageProgress !== undefined &&
+              !room.generated_image_url
+            }
             onImageClick={(url) => setLightbox({ url, room })}
           />
         ))}
@@ -72,7 +102,6 @@ export default function DesignResults({ result }: Props) {
           className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center"
           onClick={() => setLightbox(null)}
         >
-          {/* Close button */}
           <button
             onClick={() => setLightbox(null)}
             className="absolute top-6 right-6 text-white/70 hover:text-white transition-colors z-10"
@@ -82,7 +111,6 @@ export default function DesignResults({ result }: Props) {
             </svg>
           </button>
 
-          {/* Previous button */}
           {allImages.length > 1 && (
             <button
               onClick={(e) => { e.stopPropagation(); navigateLightbox(-1); }}
@@ -94,7 +122,6 @@ export default function DesignResults({ result }: Props) {
             </button>
           )}
 
-          {/* Image + Info */}
           <div
             className="max-w-5xl w-full mx-4 flex flex-col items-center gap-4"
             onClick={(e) => e.stopPropagation()}
@@ -126,7 +153,6 @@ export default function DesignResults({ result }: Props) {
             </div>
           </div>
 
-          {/* Next button */}
           {allImages.length > 1 && (
             <button
               onClick={(e) => { e.stopPropagation(); navigateLightbox(1); }}
@@ -138,7 +164,6 @@ export default function DesignResults({ result }: Props) {
             </button>
           )}
 
-          {/* Image counter */}
           {allImages.length > 1 && (
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-sm text-white/50">
               {allImages.findIndex((img) => img.url === lightbox.url) + 1} / {allImages.length}
@@ -159,15 +184,17 @@ function getImageUrl(path: string | null): string | null {
 
 function RoomCard({
   room,
+  isGenerating,
   onImageClick,
 }: {
   room: RoomDesign;
+  isGenerating?: boolean;
   onImageClick: (url: string) => void;
 }) {
   const imgUrl = getImageUrl(room.generated_image_url);
   return (
     <div className="bg-gray-900 rounded-2xl overflow-hidden border border-gray-800">
-      {imgUrl && (
+      {imgUrl ? (
         <div
           className="relative group cursor-pointer"
           onClick={() => onImageClick(imgUrl)}
@@ -193,7 +220,16 @@ function RoomCard({
             </svg>
           </div>
         </div>
-      )}
+      ) : isGenerating ? (
+        <div className="w-full h-48 bg-gray-800 flex flex-col items-center justify-center gap-3">
+          <svg className="animate-spin h-8 w-8 text-indigo-400" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <span className="text-xs text-gray-500">Generating image&hellip;</span>
+        </div>
+      ) : null}
+
       <div className="p-5 space-y-4">
         <h3 className="text-lg font-bold">{room.room_name}</h3>
         <p className="text-sm text-gray-400">{room.description}</p>

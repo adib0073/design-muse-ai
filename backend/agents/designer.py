@@ -90,14 +90,14 @@ class DesignerAgent:
         self.gemini = GeminiService()
         self.imagen = ImagenService()
 
-    async def generate(
+    async def generate_text(
         self,
         floor_plan_data: dict,
         theme: str,
         instructions: str = "",
         floor_plan_image: bytes | None = None,
     ) -> DesignResponse:
-        """Generate a complete themed design for all rooms."""
+        """Generate design text only (no images). Returns DesignResponse with rooms but no generated_image_url."""
         instruction_text = f"\nAdditional instructions: {instructions}" if instructions else ""
 
         prompt = DESIGN_GENERATION_PROMPT.format(
@@ -111,11 +111,30 @@ class DesignerAgent:
             image_bytes=floor_plan_image,
         )
 
-        design_data = self._parse_response(response, theme)
+        return self._parse_response(response, theme)
+
+    async def generate_room_image(self, room: RoomDesign, theme: str) -> str | None:
+        """Generate an image for a single room. Returns the image URL or None."""
+        image_prompt = self._build_room_image_prompt(room, theme)
+        return await self.imagen.generate_image(image_prompt)
+
+    async def generate(
+        self,
+        floor_plan_data: dict,
+        theme: str,
+        instructions: str = "",
+        floor_plan_image: bytes | None = None,
+    ) -> DesignResponse:
+        """Generate a complete themed design for all rooms (text + all images)."""
+        design_data = await self.generate_text(
+            floor_plan_data=floor_plan_data,
+            theme=theme,
+            instructions=instructions,
+            floor_plan_image=floor_plan_image,
+        )
 
         for room in design_data.rooms:
-            image_prompt = self._build_room_image_prompt(room, theme)
-            image_url = await self.imagen.generate_image(image_prompt)
+            image_url = await self.generate_room_image(room, theme)
             room.generated_image_url = image_url
 
         return design_data
@@ -204,7 +223,6 @@ class DesignerAgent:
         except json.JSONDecodeError:
             pass
 
-        # Fix Gemini's common mistake: ["#HEX": "Name"] → ["#HEX (Name)"]
         fixed = re.sub(
             r'"(#[0-9A-Fa-f]{6})"\s*:\s*"([^"]*)"',
             r'"\1"',

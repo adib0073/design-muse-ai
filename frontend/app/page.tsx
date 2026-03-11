@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import Header from "@/components/Header";
 import FloorPlanUpload from "@/components/FloorPlanUpload";
 import ThemeSelector from "@/components/ThemeSelector";
@@ -10,21 +10,25 @@ import LiveSession from "@/components/LiveSession";
 
 type AppTab = "design" | "visualize" | "live";
 
+interface RoomDesign {
+  room_name: string;
+  description: string;
+  color_palette: string[];
+  furniture_suggestions: string[];
+  decoration_suggestions: string[];
+  materials: string[];
+  generated_image_url: string | null;
+}
+
 interface DesignResult {
   theme: string;
   floor_plan_analysis: string;
-  rooms: Array<{
-    room_name: string;
-    description: string;
-    color_palette: string[];
-    furniture_suggestions: string[];
-    decoration_suggestions: string[];
-    materials: string[];
-    generated_image_url: string | null;
-  }>;
+  rooms: RoomDesign[];
   mood_board_url: string | null;
   overall_style_notes: string;
 }
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<AppTab>("design");
@@ -33,6 +37,13 @@ export default function Home() {
   const [theme, setTheme] = useState("");
   const [designResult, setDesignResult] = useState<DesignResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [imageProgress, setImageProgress] = useState<{
+    completed: number;
+    total: number;
+  } | null>(null);
+
+  // Lifted video state — persists across tab switches
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
 
   const handleFloorPlanUpload = (file: File) => {
     setFloorPlan(file);
@@ -42,27 +53,97 @@ export default function Home() {
   const handleGenerate = async () => {
     if (!floorPlan || !theme) return;
     setLoading(true);
+    setDesignResult(null);
+    setImageProgress(null);
+    setVideoUrl(null);
 
     try {
       const formData = new FormData();
       formData.append("floor_plan", floorPlan);
       formData.append("theme", theme);
 
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const res = await fetch(`${apiUrl}/api/design/generate`, {
+      const res = await fetch(`${API_URL}/api/design/generate`, {
         method: "POST",
         body: formData,
       });
 
       if (!res.ok) throw new Error("Design generation failed");
-      const data: DesignResult = await res.json();
-      setDesignResult(data);
+
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const jsonStr = line.slice(6).trim();
+          if (!jsonStr) continue;
+
+          try {
+            const event = JSON.parse(jsonStr);
+
+            if (event.type === "design_text") {
+              const design: DesignResult = event.data;
+              setDesignResult(design);
+              setImageProgress({ completed: 0, total: design.rooms.length });
+            } else if (event.type === "room_image") {
+              const { room_name, image_url } = event.data;
+              setDesignResult((prev) => {
+                if (!prev) return prev;
+                return {
+                  ...prev,
+                  rooms: prev.rooms.map((room) =>
+                    room.room_name === room_name
+                      ? { ...room, generated_image_url: image_url }
+                      : room
+                  ),
+                };
+              });
+              setImageProgress((prev) =>
+                prev ? { ...prev, completed: prev.completed + 1 } : prev
+              );
+            } else if (event.type === "complete") {
+              setImageProgress(null);
+            } else if (event.type === "error") {
+              console.error("Stream error:", event.message);
+            }
+          } catch {
+            // partial JSON — will complete on next chunk
+          }
+        }
+      }
     } catch (err) {
       console.error("Failed to generate design:", err);
     } finally {
       setLoading(false);
+      setImageProgress(null);
     }
   };
+
+  const handleDesignUpdate = useCallback(
+    (roomName: string, newImageUrl: string) => {
+      setDesignResult((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          rooms: prev.rooms.map((room) =>
+            room.room_name === roomName
+              ? { ...room, generated_image_url: newImageUrl }
+              : room
+          ),
+        };
+      });
+    },
+    []
+  );
 
   const tabs: { id: AppTab; label: string; description: string }[] = [
     {
@@ -73,7 +154,7 @@ export default function Home() {
     {
       id: "visualize",
       label: "Visualize",
-      description: "Generate room renders & video walkthrough",
+      description: "Video walkthrough of your design",
     },
     {
       id: "live",
@@ -122,14 +203,20 @@ export default function Home() {
               />
             </div>
 
-            {designResult && <DesignResults result={designResult} />}
+            {designResult && (
+              <DesignResults
+                result={designResult}
+                imageProgress={imageProgress}
+              />
+            )}
           </div>
         )}
 
         {activeTab === "visualize" && (
           <VisualizationPanel
-            floorPlan={floorPlan}
             designResult={designResult}
+            videoUrl={videoUrl}
+            onVideoUrlChange={setVideoUrl}
           />
         )}
 
@@ -137,12 +224,13 @@ export default function Home() {
           <LiveSession
             floorPlan={floorPlan}
             designResult={designResult}
+            onDesignUpdate={handleDesignUpdate}
           />
         )}
       </main>
 
       <footer className="border-t border-gray-800 py-6 text-center text-sm text-gray-500">
-        Built with Google Gemini, Imagen 3, Veo 2 &amp; Google Cloud
+        Built with Google Gemini, Imagen 3, Veo 3.1 &amp; Google Cloud
       </footer>
     </div>
   );

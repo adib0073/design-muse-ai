@@ -1,17 +1,16 @@
+import json
 import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from backend.agents.orchestrator import DesignOrchestrator
 from backend.models.schemas import (
-    DesignRequest,
-    DesignResponse,
-    VisualizationRequest,
-    VisualizationResponse,
     LiveSessionMessage,
     LiveSessionResponse,
 )
@@ -52,49 +51,55 @@ app.add_middleware(
 app.mount("/generated", StaticFiles(directory="generated"), name="generated")
 
 
+def _sse(data: dict) -> str:
+    """Format a dict as an SSE data line."""
+    return f"data: {json.dumps(data)}\n\n"
+
+
 # ---------------------------------------------------------------------------
-# Feature 1: Theme-Based Design Generation
+# Feature 1: Theme-Based Design Generation (SSE stream)
 # ---------------------------------------------------------------------------
-@app.post("/api/design/generate", response_model=DesignResponse)
+@app.post("/api/design/generate")
 async def generate_design(
     floor_plan: UploadFile = File(...),
     theme: str = Form(...),
     additional_instructions: str = Form(""),
 ):
-    """Analyze a floor plan and generate themed design recommendations."""
+    """Stream design generation: first the text plan, then images one-by-one."""
     if not floor_plan.content_type or not floor_plan.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Floor plan must be an image file.")
 
     image_bytes = await floor_plan.read()
-    result = await orchestrator.generate_design(
-        floor_plan_image=image_bytes,
-        theme=theme,
-        instructions=additional_instructions,
-    )
-    return result
+
+    async def event_stream():
+        async for event in orchestrator.generate_design_stream(
+            floor_plan_image=image_bytes,
+            theme=theme,
+            instructions=additional_instructions,
+        ):
+            yield _sse(event)
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 # ---------------------------------------------------------------------------
-# Feature 2: Personalized Video Visualization
+# Feature 2: Video Walkthrough (SSE stream with progress)
 # ---------------------------------------------------------------------------
-@app.post("/api/visualize/render", response_model=VisualizationResponse)
-async def render_visualization(
-    floor_plan: UploadFile = File(...),
-    theme: str = Form(...),
-    room: str = Form("all"),
-    reference_images: list[UploadFile] = File(default=[]),
-):
-    """Generate room renders and video walkthrough with user-provided references."""
-    floor_plan_bytes = await floor_plan.read()
-    ref_images_bytes = [await img.read() for img in reference_images]
+class WalkthroughRequest(BaseModel):
+    image_urls: list[str]
 
-    result = await orchestrator.render_visualization(
-        floor_plan_image=floor_plan_bytes,
-        theme=theme,
-        room=room,
-        reference_images=ref_images_bytes,
-    )
-    return result
+
+@app.post("/api/visualize/walkthrough")
+async def create_walkthrough(request: WalkthroughRequest):
+    """Stream walkthrough video generation with per-clip progress."""
+
+    async def event_stream():
+        async for event in orchestrator.create_walkthrough_stream(
+            image_urls=request.image_urls,
+        ):
+            yield _sse(event)
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +128,21 @@ async def start_live_session(
         theme=theme,
     )
     return session
+
+
+class ConfirmChangeRequest(BaseModel):
+    room_name: str
+    new_image_url: str
+
+
+@app.post("/api/live/confirm")
+async def confirm_live_change(request: ConfirmChangeRequest):
+    """Confirm a live session change — updates the stored design's room image."""
+    success = orchestrator.update_design_room_image(
+        room_name=request.room_name,
+        new_image_url=request.new_image_url,
+    )
+    return {"success": success}
 
 
 # ---------------------------------------------------------------------------
