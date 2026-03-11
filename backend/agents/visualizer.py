@@ -46,6 +46,30 @@ class VisualizerAgent:
             status="completed",
         )
 
+    async def render_rooms_only(
+        self,
+        design: DesignResponse,
+        rooms: list[str],
+    ) -> list[RoomRender]:
+        """Render images for specific rooms without generating video (used by live session)."""
+        target_rooms = {r.strip().lower() for r in rooms}
+        rooms_to_render = [
+            r for r in design.rooms
+            if r.room_name.lower() in target_rooms
+        ]
+
+        rendered: list[RoomRender] = []
+        for room_design in rooms_to_render:
+            prompt = self._build_render_prompt(room_design, design.theme)
+            render_url = await self.imagen.generate_image(prompt)
+            rendered.append(RoomRender(
+                room_name=room_design.room_name,
+                render_url=render_url or "",
+                description=room_design.description,
+            ))
+
+        return rendered
+
     def _build_render_prompt(
         self,
         room_design,

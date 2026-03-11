@@ -7,11 +7,20 @@ interface Props {
   designResult: any | null;
 }
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+function resolveUrl(path: string | null): string | null {
+  if (!path) return null;
+  if (path.startsWith("http")) return path;
+  return `${API_URL}${path}`;
+}
+
 export default function VisualizationPanel({ floorPlan, designResult }: Props) {
   const [referenceImages, setReferenceImages] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
+  const [error, setError] = useState<string>("");
 
   const handleReferenceUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -23,6 +32,7 @@ export default function VisualizationPanel({ floorPlan, designResult }: Props) {
   const handleGenerate = async () => {
     if (!floorPlan || !designResult) return;
     setLoading(true);
+    setError("");
 
     try {
       const formData = new FormData();
@@ -30,16 +40,19 @@ export default function VisualizationPanel({ floorPlan, designResult }: Props) {
       formData.append("theme", designResult.theme);
       referenceImages.forEach((img) => formData.append("reference_images", img));
 
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const res = await fetch(`${apiUrl}/api/visualize/render`, {
+      const res = await fetch(`${API_URL}/api/visualize/render`, {
         method: "POST",
         body: formData,
       });
 
-      if (!res.ok) throw new Error("Visualization failed");
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        throw new Error(errData?.detail || `Server error ${res.status}`);
+      }
       setResult(await res.json());
-    } catch (err) {
+    } catch (err: any) {
       console.error("Visualization failed:", err);
+      setError(err.message || "Visualization failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -50,7 +63,8 @@ export default function VisualizationPanel({ floorPlan, designResult }: Props) {
       <div className="text-center py-20 text-gray-500">
         <p className="text-lg">Generate a design first</p>
         <p className="text-sm mt-2">
-          Switch to the Design tab to upload a floor plan and generate your design.
+          Switch to the Design tab to upload a floor plan and generate your
+          design.
         </p>
       </div>
     );
@@ -64,8 +78,8 @@ export default function VisualizationPanel({ floorPlan, designResult }: Props) {
           Upload Reference Images (Optional)
         </h2>
         <p className="text-sm text-gray-400 mb-4">
-          Upload photos of furniture, existing rooms, or inspiration images.
-          The AI will incorporate these into your visualization.
+          Upload photos of furniture, existing rooms, or inspiration images. The
+          AI will incorporate these into your visualization.
         </p>
 
         <div className="flex flex-wrap gap-3 mb-4">
@@ -106,8 +120,22 @@ export default function VisualizationPanel({ floorPlan, designResult }: Props) {
           disabled={loading}
           className="py-3 px-6 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-xl transition-all hover:from-indigo-500 hover:to-purple-500 disabled:opacity-40"
         >
-          {loading ? "Generating visualization..." : "Generate Room Renders & Video"}
+          {loading ? (
+            <span className="flex items-center gap-2">
+              <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Generating renders &amp; video (this may take a few minutes)...
+            </span>
+          ) : (
+            "Generate Room Renders & Video"
+          )}
         </button>
+
+        {error && (
+          <p className="mt-3 text-sm text-red-400">{error}</p>
+        )}
       </div>
 
       {/* Results */}
@@ -119,7 +147,7 @@ export default function VisualizationPanel({ floorPlan, designResult }: Props) {
                 Apartment Walkthrough
               </h3>
               <video
-                src={result.video_url}
+                src={resolveUrl(result.video_url)!}
                 controls
                 className="w-full rounded-xl"
               />
@@ -127,26 +155,29 @@ export default function VisualizationPanel({ floorPlan, designResult }: Props) {
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {result.rooms?.map((room: any) => (
-              <div
-                key={room.room_name}
-                className="bg-gray-900 rounded-2xl overflow-hidden border border-gray-800"
-              >
-                {room.render_url && (
-                  <img
-                    src={room.render_url}
-                    alt={room.room_name}
-                    className="w-full h-48 object-cover"
-                  />
-                )}
-                <div className="p-5">
-                  <h4 className="font-bold">{room.room_name}</h4>
-                  <p className="text-sm text-gray-400 mt-1">
-                    {room.description}
-                  </p>
+            {result.rooms?.map((room: any) => {
+              const imgUrl = resolveUrl(room.render_url);
+              return (
+                <div
+                  key={room.room_name}
+                  className="bg-gray-900 rounded-2xl overflow-hidden border border-gray-800"
+                >
+                  {imgUrl && (
+                    <img
+                      src={imgUrl}
+                      alt={room.room_name}
+                      className="w-full h-48 object-cover"
+                    />
+                  )}
+                  <div className="p-5">
+                    <h4 className="font-bold">{room.room_name}</h4>
+                    <p className="text-sm text-gray-400 mt-1">
+                      {room.description}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

@@ -23,6 +23,8 @@ class DesignOrchestrator:
         self.designer_agent = DesignerAgent()
         self.visualizer_agent = VisualizerAgent()
         self._sessions: dict[str, dict] = {}
+        self._last_design: DesignResponse | None = None
+        self._last_floor_plan: bytes | None = None
 
     async def generate_design(
         self,
@@ -40,6 +42,9 @@ class DesignOrchestrator:
             floor_plan_image=floor_plan_image,
         )
 
+        self._last_design = design
+        self._last_floor_plan = floor_plan_image
+
         return design
 
     async def render_visualization(
@@ -49,14 +54,18 @@ class DesignOrchestrator:
         room: str = "all",
         reference_images: list[bytes] | None = None,
     ) -> VisualizationResponse:
-        """Feature 2: Generate room renders and video walkthrough."""
-        floor_plan_data = await self.floor_plan_agent.analyze(floor_plan_image)
-
-        design = await self.designer_agent.generate(
-            floor_plan_data=floor_plan_data,
-            theme=theme,
-            floor_plan_image=floor_plan_image,
-        )
+        """Feature 2: Generate room renders and video walkthrough.
+        Reuses the existing design if available instead of regenerating.
+        """
+        design = self._last_design
+        if not design or design.theme != theme:
+            floor_plan_data = await self.floor_plan_agent.analyze(floor_plan_image)
+            design = await self.designer_agent.generate(
+                floor_plan_data=floor_plan_data,
+                theme=theme,
+                floor_plan_image=floor_plan_image,
+            )
+            self._last_design = design
 
         visualization = await self.visualizer_agent.render(
             design=design,
@@ -71,13 +80,17 @@ class DesignOrchestrator:
         floor_plan_image: bytes,
         theme: str,
     ) -> LiveSessionStart:
-        """Feature 3: Initialize a live interactive design session."""
+        """Feature 3: Initialize a live interactive design session.
+        Reuses existing design to avoid regenerating everything.
+        """
         session_id = str(uuid.uuid4())
 
-        design = await self.generate_design(
-            floor_plan_image=floor_plan_image,
-            theme=theme,
-        )
+        design = self._last_design
+        if not design or design.theme != theme:
+            design = await self.generate_design(
+                floor_plan_image=floor_plan_image,
+                theme=theme,
+            )
 
         self._sessions[session_id] = {
             "floor_plan_image": floor_plan_image,
@@ -120,11 +133,11 @@ class DesignOrchestrator:
 
         updated_renders = []
         if result.get("affected_rooms"):
-            viz = await self.visualizer_agent.render(
+            viz = await self.visualizer_agent.render_rooms_only(
                 design=result["updated_design"],
-                room=",".join(result["affected_rooms"]),
+                rooms=result["affected_rooms"],
             )
-            updated_renders = viz.rooms
+            updated_renders = viz
 
         return LiveSessionResponse(
             session_id=session_id,
