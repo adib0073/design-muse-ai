@@ -17,11 +17,19 @@ class GeminiService:
         )
         return response.text or ""
 
-    async def generate_json(self, prompt: str, image_bytes: bytes | None = None) -> str:
+    async def generate_json(
+        self,
+        prompt: str,
+        image_bytes: bytes | None = None,
+        extra_images: list[bytes] | None = None,
+    ) -> str:
         """Generate a response constrained to valid JSON output."""
         contents: list = []
         if image_bytes:
             contents.append(types.Part.from_bytes(data=image_bytes, mime_type="image/png"))
+        if extra_images:
+            for img in extra_images:
+                contents.append(types.Part.from_bytes(data=img, mime_type="image/png"))
         contents.append(prompt)
 
         response = await self.client.aio.models.generate_content(

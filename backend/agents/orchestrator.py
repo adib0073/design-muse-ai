@@ -160,6 +160,7 @@ class DesignOrchestrator:
         self,
         session_id: str,
         user_message: str,
+        reference_image: bytes | None = None,
         context: dict | None = None,
     ) -> LiveSessionResponse:
         """Feature 3: Process a live design modification request."""
@@ -174,6 +175,7 @@ class DesignOrchestrator:
             current_design=session["current_design"],
             user_request=user_message,
             floor_plan_image=session["floor_plan_image"],
+            reference_image=reference_image,
         )
 
         session["current_design"] = result["updated_design"]

@@ -15,39 +15,64 @@ interface RoomRender {
   render_url: string;
 }
 
-interface ChatMessage {
+export interface ChatMessage {
   role: "user" | "agent";
   content: string;
   renders?: RoomRender[];
   changes?: string[];
   confirmed?: boolean;
+  attachedImageUrl?: string;
 }
 
 interface Props {
   floorPlan: File | null;
   designResult: any | null;
   onDesignUpdate?: (roomName: string, newImageUrl: string) => void;
+  sessionId: string;
+  onSessionIdChange: (id: string) => void;
+  messages: ChatMessage[];
+  onMessagesChange: (msgs: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => void;
+  onResetSession: () => void;
 }
 
 export default function LiveSession({
   floorPlan,
   designResult,
   onDesignUpdate,
+  sessionId,
+  onSessionIdChange,
+  messages,
+  onMessagesChange,
+  onResetSession,
 }: Props) {
-  const [sessionId, setSessionId] = useState<string>("");
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [attachedImage, setAttachedImage] = useState<File | null>(null);
+  const [attachedPreview, setAttachedPreview] = useState<string>("");
   const [lightbox, setLightbox] = useState<{
     url: string;
     roomName: string;
   } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  const handleAttachImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAttachedImage(file);
+    setAttachedPreview(URL.createObjectURL(file));
+  };
+
+  const clearAttachment = () => {
+    setAttachedImage(null);
+    setAttachedPreview("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
   const startSession = async () => {
     if (!floorPlan || !designResult) return;
@@ -65,11 +90,25 @@ export default function LiveSession({
 
       if (!res.ok) throw new Error("Failed to start session");
       const data = await res.json();
-      setSessionId(data.session_id);
-      setMessages([
+      onSessionIdChange(data.session_id);
+
+      const spacesWithImages = (designResult.rooms || []).filter(
+        (r: any) => r.generated_image_url
+      ).length;
+
+      onMessagesChange([
         {
           role: "agent",
-          content: `Live design session started! I've loaded your ${designResult.theme} design with ${designResult.rooms?.length || 0} spaces. What changes would you like to make? Try things like:\n\n- "Change the living room sofa to dark leather"\n- "Make the bedroom curtains a deeper blue"\n- "Add a bookshelf to the alcove"\n- "Try warmer lighting in the kitchen"`,
+          content:
+            `Live design session started! I've loaded your ${designResult.theme} design ` +
+            `with ${designResult.rooms?.length || 0} spaces ` +
+            `(${spacesWithImages} with generated images).\n\n` +
+            `Your floor plan and all design details are loaded in context.\n\n` +
+            `What changes would you like to make? You can also attach a photo of ` +
+            `furniture or decor you want to use. Try:\n\n` +
+            `- "Change the living room sofa to dark leather"\n` +
+            `- "Add a bookshelf to the alcove"\n` +
+            `- Upload an image of a chair and say "Use this chair in Bedroom-01"`,
         },
       ]);
     } catch (err) {
@@ -80,30 +119,44 @@ export default function LiveSession({
   };
 
   const sendMessage = async () => {
-    if (!input.trim() || !sessionId || loading) return;
+    if ((!input.trim() && !attachedImage) || !sessionId || loading) return;
 
     const userMessage = input.trim();
+    const imageFile = attachedImage;
+    const imagePreview = attachedPreview;
+
     setInput("");
-    setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
+    clearAttachment();
+
+    onMessagesChange((prev: ChatMessage[]) => [
+      ...prev,
+      {
+        role: "user" as const,
+        content: userMessage || "(attached image)",
+        attachedImageUrl: imagePreview || undefined,
+      },
+    ]);
     setLoading(true);
 
     try {
+      const formData = new FormData();
+      formData.append("session_id", sessionId);
+      formData.append("message", userMessage || "Please analyze the attached image and incorporate it into the design.");
+      if (imageFile) {
+        formData.append("reference_image", imageFile);
+      }
+
       const res = await fetch(`${API_URL}/api/live/message`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          session_id: sessionId,
-          message: userMessage,
-          context: {},
-        }),
+        body: formData,
       });
 
       if (!res.ok) throw new Error("Failed to send message");
       const data = await res.json();
-      setMessages((prev) => [
+      onMessagesChange((prev: ChatMessage[]) => [
         ...prev,
         {
-          role: "agent",
+          role: "agent" as const,
           content: data.agent_message,
           renders: data.updated_renders,
           changes: data.design_changes,
@@ -112,10 +165,10 @@ export default function LiveSession({
       ]);
     } catch (err) {
       console.error("Message failed:", err);
-      setMessages((prev) => [
+      onMessagesChange((prev: ChatMessage[]) => [
         ...prev,
         {
-          role: "agent",
+          role: "agent" as const,
           content: "Something went wrong. Please try again.",
         },
       ]);
@@ -140,7 +193,7 @@ export default function LiveSession({
       onDesignUpdate(render.room_name, render.render_url);
     }
 
-    setMessages((prev) =>
+    onMessagesChange((prev: ChatMessage[]) =>
       prev.map((m, i) => (i === msgIndex ? { ...m, confirmed: true } : m))
     );
   };
@@ -167,8 +220,9 @@ export default function LiveSession({
         </div>
         <h2 className="text-xl font-bold mb-2">Start a Live Design Session</h2>
         <p className="text-gray-400 text-sm mb-6 max-w-md mx-auto">
-          Chat with your AI interior designer in real-time. Request changes to
-          furniture, colors, layouts and see updated renders instantly.
+          Chat with your AI interior designer in real-time. Request changes,
+          upload reference photos of furniture or styles, and see updated renders
+          instantly.
         </p>
         <button
           onClick={startSession}
@@ -181,7 +235,7 @@ export default function LiveSession({
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
-              Loading design...
+              Loading design context...
             </span>
           ) : (
             "Start Session"
@@ -194,6 +248,25 @@ export default function LiveSession({
   return (
     <>
       <div className="bg-gray-900 rounded-2xl border border-gray-800 flex flex-col h-[600px]">
+        {/* Session Header */}
+        <div className="flex items-center justify-between px-6 py-3 border-b border-gray-800">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+            <span className="text-sm text-gray-400">
+              Live session &mdash; {designResult.theme}
+            </span>
+          </div>
+          <button
+            onClick={onResetSession}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            New Session
+          </button>
+        </div>
+
         {/* Chat Messages */}
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
           {messages.map((msg, i) => (
@@ -208,6 +281,24 @@ export default function LiveSession({
                     : "bg-gray-800 text-gray-200"
                 }`}
               >
+                {/* User's attached image */}
+                {msg.attachedImageUrl && (
+                  <div className="mb-2">
+                    <img
+                      src={msg.attachedImageUrl}
+                      alt="Reference"
+                      className="max-h-32 rounded-lg border border-white/20 cursor-pointer"
+                      onClick={() =>
+                        setLightbox({
+                          url: msg.attachedImageUrl!,
+                          roomName: "Reference Image",
+                        })
+                      }
+                    />
+                    <p className="text-xs opacity-60 mt-1">Attached reference</p>
+                  </div>
+                )}
+
                 <p className="text-sm whitespace-pre-line">{msg.content}</p>
 
                 {msg.changes && msg.changes.length > 0 && (
@@ -255,7 +346,6 @@ export default function LiveSession({
                       })}
                     </div>
 
-                    {/* Confirm / Apply button */}
                     {msg.confirmed ? (
                       <div className="flex items-center gap-1.5 text-xs text-green-400 mt-1">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -293,21 +383,64 @@ export default function LiveSession({
           <div ref={messagesEndRef} />
         </div>
 
+        {/* Attached image preview */}
+        {attachedPreview && (
+          <div className="px-4 pt-2 flex items-center gap-2">
+            <div className="relative inline-block">
+              <img
+                src={attachedPreview}
+                alt="Attached"
+                className="h-16 rounded-lg border border-gray-700"
+              />
+              <button
+                onClick={clearAttachment}
+                className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-600 rounded-full flex items-center justify-center text-white text-xs hover:bg-red-500"
+              >
+                &times;
+              </button>
+            </div>
+            <span className="text-xs text-gray-500">Reference image attached</span>
+          </div>
+        )}
+
         {/* Input */}
         <div className="border-t border-gray-800 p-4">
           <div className="flex gap-3">
+            {/* Image upload button */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleAttachImage}
+              className="hidden"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={loading}
+              className="px-3 py-3 bg-gray-800 border border-gray-700 rounded-xl text-gray-400 hover:text-white hover:bg-gray-700 transition-colors disabled:opacity-50"
+              title="Attach a reference image"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0022.5 18.75V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" />
+              </svg>
+            </button>
+
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendMessage()}
-              placeholder="Try: 'Change the living room sofa to a dark leather sectional'"
+              placeholder={
+                attachedImage
+                  ? 'Describe how to use this item, e.g. "Use this sofa in the living room"'
+                  : "Try: 'Change the living room sofa to a dark leather sectional'"
+              }
               disabled={loading}
               className="flex-1 px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
             />
             <button
               onClick={sendMessage}
-              disabled={!input.trim() || loading}
+              disabled={(!input.trim() && !attachedImage) || loading}
               className="px-5 py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-500 disabled:opacity-40 transition-colors"
             >
               Send

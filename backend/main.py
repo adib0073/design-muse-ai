@@ -10,10 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from backend.agents.orchestrator import DesignOrchestrator
-from backend.models.schemas import (
-    LiveSessionMessage,
-    LiveSessionResponse,
-)
+from backend.models.schemas import LiveSessionResponse
 from backend.services.storage import StorageService
 
 load_dotenv()
@@ -105,13 +102,21 @@ async def create_walkthrough(request: WalkthroughRequest):
 # ---------------------------------------------------------------------------
 # Feature 3: Live Interactive Design Session
 # ---------------------------------------------------------------------------
-@app.post("/api/live/message", response_model=LiveSessionResponse)
-async def live_session_message(message: LiveSessionMessage):
-    """Send a message in a live design session and receive updated visuals."""
+@app.post("/api/live/message")
+async def live_session_message(
+    session_id: str = Form(...),
+    message: str = Form(...),
+    reference_image: UploadFile | None = File(None),
+):
+    """Send a message in a live design session with an optional reference image."""
+    ref_bytes = None
+    if reference_image and reference_image.size and reference_image.size > 0:
+        ref_bytes = await reference_image.read()
+
     result = await orchestrator.handle_live_message(
-        session_id=message.session_id,
-        user_message=message.message,
-        context=message.context,
+        session_id=session_id,
+        user_message=message,
+        reference_image=ref_bytes,
     )
     return result
 

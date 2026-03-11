@@ -57,6 +57,7 @@ Current design state:
 
 The client has requested the following change:
 "{user_request}"
+{reference_note}
 
 Analyze the request and:
 1. Determine which rooms are affected
@@ -144,16 +145,28 @@ class DesignerAgent:
         current_design: DesignResponse,
         user_request: str,
         floor_plan_image: bytes | None = None,
+        reference_image: bytes | None = None,
     ) -> dict:
         """Modify an existing design based on user request (live session)."""
+        reference_note = ""
+        if reference_image:
+            reference_note = (
+                "\nThe client has also attached a reference image showing the item, "
+                "furniture, style, or material they want to incorporate. "
+                "Analyze this image and integrate what you see into the design changes."
+            )
+
         prompt = MODIFY_DESIGN_PROMPT.format(
             current_design=current_design.model_dump_json(indent=2),
             user_request=user_request,
+            reference_note=reference_note,
         )
 
+        extra_images = [reference_image] if reference_image else None
         response = await self.gemini.generate_json(
             prompt=prompt,
             image_bytes=floor_plan_image,
+            extra_images=extra_images,
         )
 
         result = self._safe_parse_json(response)

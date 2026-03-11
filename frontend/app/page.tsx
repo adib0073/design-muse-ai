@@ -6,7 +6,7 @@ import FloorPlanUpload from "@/components/FloorPlanUpload";
 import ThemeSelector from "@/components/ThemeSelector";
 import DesignResults from "@/components/DesignResults";
 import VisualizationPanel from "@/components/VisualizationPanel";
-import LiveSession from "@/components/LiveSession";
+import LiveSession, { type ChatMessage } from "@/components/LiveSession";
 
 type AppTab = "design" | "visualize" | "live";
 
@@ -42,8 +42,12 @@ export default function Home() {
     total: number;
   } | null>(null);
 
-  // Lifted video state — persists across tab switches
+  // Lifted video state
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
+
+  // Lifted live session state
+  const [liveSessionId, setLiveSessionId] = useState<string>("");
+  const [liveMessages, setLiveMessages] = useState<ChatMessage[]>([]);
 
   const handleFloorPlanUpload = (file: File) => {
     setFloorPlan(file);
@@ -145,6 +149,11 @@ export default function Home() {
     []
   );
 
+  const handleResetSession = useCallback(() => {
+    setLiveSessionId("");
+    setLiveMessages([]);
+  }, []);
+
   const tabs: { id: AppTab; label: string; description: string }[] = [
     {
       id: "design",
@@ -225,6 +234,11 @@ export default function Home() {
             floorPlan={floorPlan}
             designResult={designResult}
             onDesignUpdate={handleDesignUpdate}
+            sessionId={liveSessionId}
+            onSessionIdChange={setLiveSessionId}
+            messages={liveMessages}
+            onMessagesChange={setLiveMessages}
+            onResetSession={handleResetSession}
           />
         )}
       </main>
