@@ -1,6 +1,7 @@
 # DesignMuse AI
+[![DesignMuse AI](frontend/public/full_indigo_font.png)](frontend/public/full_indigo_font.png)
 
-> Your AI Interior Design Agent — Transform any floor plan into a fully visualized, themed living space.
+> Personalized AI Interior Design Agent — Transform any floor plan into a fully visualized, themed living space.
 
 [![Built with Gemini](https://img.shields.io/badge/Built%20with-Google%20Gemini-4285F4?logo=google&logoColor=white)](https://ai.google.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -103,27 +104,13 @@ npm run dev
 
 ## Architecture
 
-```
-User Input (Floor Plan + Theme)
-        │
-        ▼
-   ┌─────────┐     ┌─────────┐     ┌─────────┐     ┌─────────┐
-   │ Analyze  │────▶│ Design  │────▶│ Render  │────▶│ Video   │
-   │ Floor    │     │ Generate│     │ Spaces  │     │ Generate│
-   │ Plan     │     │         │     │         │     │         │
-   └─────────┘     └─────────┘     └─────────┘     └─────────┘
-   Gemini 2.5       Gemini 2.5      Imagen 3 /      Veo 3.1 +
-   Flash             Flash          Gemini Image     FFmpeg
-                                        │
-                                        ▼
-                                  ┌─────────┐
-                                  │ Live     │
-                                  │ Session  │
-                                  └─────────┘
-                                  Gemini 2.5 Flash
-                                  + Image Editing
-                                  + Voice Input
-```
+[![Architecture](frontend/public/high_level_design.jpg)](frontend\public/high_level_design.jpg)
+
+---
+
+## System Workflow
+
+[![Workflow](frontend/public/workflow_diagram.jpg)](frontend/public/workflow_diagram.jpg)
 
 ## Project Structure
 
@@ -184,4 +171,4 @@ MIT — see [LICENSE](LICENSE) for details.
 
 ## Acknowledgments
 
-Built for the Google Gemini Hackathon. Powered by Google Gemini, Imagen 3, Veo 3.1, and Google Cloud.
+This project is built by [**Dr. Aditya Bhattacharya**](https://www.linkedin.com/in/adi-phd/) . Powered by Google Gemini, Imagen 3, Veo 3.1, and Google Cloud.
