@@ -84,18 +84,56 @@ class VisualizerAgent:
         self,
         design: DesignResponse,
         rooms: list[str],
+        changes: list[str] | None = None,
+        reference_image: bytes | None = None,
     ) -> list[RoomRender]:
-        """Render images for specific rooms without generating video (used by live session)."""
+        """Edit existing room images based on requested changes (live session).
+
+        Strategy per room:
+        1. Load existing image and try Gemini image edit (preserves original).
+        2. If edit fails, regenerate with Imagen using full description + changes.
+        3. If both fail, keep the original image URL.
+        """
         target_rooms = {r.strip().lower() for r in rooms}
         rooms_to_render = [
             r for r in design.rooms
             if r.room_name.lower() in target_rooms
         ]
 
+        changes_text = "; ".join(changes) if changes else "Update the design"
+
         rendered: list[RoomRender] = []
         for room_design in rooms_to_render:
-            prompt = self._build_render_prompt(room_design, design.theme)
-            render_url = await self.imagen.generate_image(prompt)
+            render_url: str | None = None
+
+            existing_bytes = None
+            if room_design.generated_image_url:
+                existing_bytes = self._load_local_image(room_design.generated_image_url)
+
+            if existing_bytes:
+                print(f"  [1/3] Editing existing image for {room_design.room_name}")
+                edit_prompt = self._build_edit_prompt(
+                    room_design, design.theme, changes_text, reference_image is not None
+                )
+                render_url = await self.imagen.edit_room_image(
+                    source_image=existing_bytes,
+                    edit_prompt=edit_prompt,
+                    reference_image=reference_image,
+                )
+            else:
+                print(f"  No existing image for {room_design.room_name}")
+
+            if not render_url:
+                print(f"  [2/3] Regenerating {room_design.room_name} with changes baked into prompt")
+                fallback_prompt = self._build_render_prompt_with_changes(
+                    room_design, design.theme, changes_text
+                )
+                render_url = await self.imagen.generate_image(fallback_prompt)
+
+            if not render_url and room_design.generated_image_url:
+                print(f"  [3/3] Keeping original image for {room_design.room_name}")
+                render_url = room_design.generated_image_url
+
             rendered.append(RoomRender(
                 room_name=room_design.room_name,
                 render_url=render_url or "",
@@ -111,6 +149,51 @@ class VisualizerAgent:
                 with open(local_path, "rb") as f:
                     return f.read()
         return None
+
+    def _build_edit_prompt(
+        self,
+        room_design,
+        theme: str,
+        changes_text: str,
+        has_reference: bool,
+    ) -> str:
+        """Build a prompt for editing an existing room image."""
+        base = (
+            f"Edit this interior design image of a {room_design.room_name} "
+            f"in {theme} style. "
+            f"Make the following changes: {changes_text}. "
+        )
+        if has_reference:
+            base += (
+                "A reference image of the item to add is also provided. "
+                "Extract the item from the reference image and naturally place it "
+                "into the room, matching the perspective, lighting, and scale of "
+                "the existing design. "
+            )
+        base += (
+            "Keep the rest of the room exactly as it is — same layout, colors, "
+            "furniture, and lighting. Only modify what was explicitly requested. "
+            "Produce a photorealistic result."
+        )
+        return base
+
+    def _build_render_prompt_with_changes(
+        self, room_design, theme: str, changes_text: str
+    ) -> str:
+        """Build a generation prompt that incorporates both original design and changes."""
+        colors = ", ".join(room_design.color_palette[:4]) if room_design.color_palette else ""
+        furniture = ", ".join(room_design.furniture_suggestions[:4]) if room_design.furniture_suggestions else ""
+        materials = ", ".join(room_design.materials[:3]) if room_design.materials else ""
+
+        return (
+            f"Photorealistic interior design render of a {room_design.room_name} "
+            f"in {theme} style. {room_design.description[:400]} "
+            f"Color palette: {colors}. "
+            f"Furniture: {furniture}. "
+            f"Materials: {materials}. "
+            f"IMPORTANT modifications applied: {changes_text}. "
+            f"Professional architectural visualization, 8K quality, well-lit, realistic."
+        )
 
     def _build_render_prompt(self, room_design, theme: str) -> str:
         colors = ", ".join(room_design.color_palette[:3]) if room_design.color_palette else ""

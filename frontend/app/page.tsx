@@ -161,14 +161,14 @@ export default function Home() {
       description: "Upload floor plan & generate themed designs",
     },
     {
-      id: "visualize",
-      label: "Visualize",
-      description: "Video walkthrough of your design",
-    },
-    {
       id: "live",
       label: "Live Session",
       description: "Interactive real-time design changes",
+    },
+    {
+      id: "visualize",
+      label: "Visualize",
+      description: "Video walkthrough of your design",
     },
   ];
 

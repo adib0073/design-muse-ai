@@ -6,14 +6,15 @@ import uuid
 from google.genai import types
 
 from backend.services.client import get_client
+from backend.services.gemini import GeminiService
 
 
 class ImagenService:
     def __init__(self):
         self.client = get_client()
         self.imagen_model = "imagen-3.0-fast-generate-001"
-        self.gemini_model = "gemini-2.0-flash"
         self.output_dir = "generated/images"
+        self._gemini = GeminiService()
         os.makedirs(self.output_dir, exist_ok=True)
 
     async def generate_image(self, prompt: str) -> str | None:
@@ -23,6 +24,26 @@ class ImagenService:
             return url
 
         return await self._try_gemini_native(prompt)
+
+    async def edit_room_image(
+        self,
+        source_image: bytes,
+        edit_prompt: str,
+        reference_image: bytes | None = None,
+    ) -> str | None:
+        """Edit an existing room image using Gemini's native image editing.
+        Returns the new image URL, or None if editing failed.
+        """
+        edited = await self._gemini.edit_image(
+            source_image=source_image,
+            edit_prompt=edit_prompt,
+            reference_image=reference_image,
+        )
+        if edited:
+            return self._save_image(edited)
+
+        print("Image edit failed; caller should handle fallback")
+        return None
 
     async def _try_imagen(self, prompt: str) -> str | None:
         try:
@@ -46,21 +67,13 @@ class ImagenService:
         return None
 
     async def _try_gemini_native(self, prompt: str) -> str | None:
-        """Use Gemini 2.0 Flash's native image generation as fallback."""
+        """Use Gemini image models as fallback for text-to-image."""
         try:
-            response = await self.client.aio.models.generate_content(
-                model=self.gemini_model,
-                contents=f"Generate a single high-quality interior design image: {prompt}",
-                config=types.GenerateContentConfig(
-                    response_modalities=["IMAGE"],
-                ),
+            image_bytes = await self._gemini.generate_image_from_prompt(
+                f"Generate a single high-quality interior design image: {prompt}"
             )
-
-            if response.candidates and response.candidates[0].content.parts:
-                for part in response.candidates[0].content.parts:
-                    if part.inline_data and part.inline_data.mime_type.startswith("image/"):
-                        return self._save_image(part.inline_data.data)
-
+            if image_bytes:
+                return self._save_image(image_bytes)
         except Exception as e:
             print(f"Gemini native image generation also failed: {e}")
 

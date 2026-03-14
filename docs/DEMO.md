@@ -13,30 +13,31 @@
 2. Upload a floor plan sketch (hand-drawn or blueprint)
 3. Select "Greek Mediterranean" theme
 4. Click "Generate Design"
-5. Show the interleaved output: room-by-room analysis with generated images, color palettes, furniture suggestions
+5. Watch as the design text appears first, then room images stream in one by one
+6. Click on any room image to view it fullscreen
 
-**Key talking point:** "One image, one theme — complete design in seconds, not weeks."
+**Key talking point:** "One image, one theme — complete design with photorealistic renders in seconds, not weeks."
 
-### [1:30–2:15] Feature 2 — Video Visualization
+### [1:30–2:15] Feature 2 — Live Interactive Session
+1. Switch to the Live Session tab
+2. Start a new session (loads the design context automatically)
+3. Type or use voice input: "Change the living room sofa to a dark leather sectional"
+4. Show the agent's response with the edited room image
+5. Upload a photo of a specific chair and say: "Use this chair in Bedroom-01"
+6. Show the system extracting the item and placing it into the existing room render
+7. Click "Apply changes to design" to update the main design
+
+**Key talking point:** "See your exact furniture in your exact space. An AI interior designer that responds in seconds, not days."
+
+### [2:15–2:45] Feature 3 — Video Walkthrough
 1. Switch to the Visualize tab
-2. Upload a photo of a specific sofa from a furniture website
-3. Upload an inspiration photo of a Greek-style kitchen
-4. Generate visualization
-5. Show room renders with the uploaded furniture placed in the themed space
-6. Play the walkthrough video
+2. Click "Generate Walkthrough Video"
+3. Show the real-time progress bar as each room clip is generated
+4. Play the final stitched walkthrough video in fullscreen
 
-**Key talking point:** "See your exact furniture in your exact space, before you buy."
-
-### [2:15–2:45] Feature 3 — Live Session
-1. Switch to Live Session tab and start a session
-2. Type: "Change the living room curtains to a darker shade"
-3. Show the agent's response with updated render
-4. Type: "Can you try a wooden coffee table instead?"
-5. Show live design update
-
-**Key talking point:** "An interior designer that responds in seconds, not days."
+**Key talking point:** "Walk through your redesigned apartment before a single piece of furniture is moved."
 
 ### [2:45–3:00] Closing
 - Recap: "World-class interior design, for everyone, in minutes."
-- Mention: Built entirely on Google Gemini, Imagen 3, Veo 2, and Google Cloud
+- Tech stack: Gemini 2.5 Flash, Gemini 2.5 Flash Image, Imagen 3, Veo 3.1, FFmpeg, all on Google Cloud
 - Show the open-source GitHub repo

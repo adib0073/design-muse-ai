@@ -10,9 +10,11 @@ import os
 from google import genai
 
 _client: genai.Client | None = None
+_image_client: genai.Client | None = None
 
 
 def get_client() -> genai.Client:
+    """Client for text, Imagen, and Veo models (region-specific)."""
     global _client
     if _client is not None:
         return _client
@@ -32,3 +34,26 @@ def get_client() -> genai.Client:
         _client = genai.Client(api_key=api_key)
 
     return _client
+
+
+def get_image_client() -> genai.Client:
+    """Client for Gemini image generation/editing models.
+
+    These models (gemini-*-image*) require location='global' on Vertex AI.
+    """
+    global _image_client
+    if _image_client is not None:
+        return _image_client
+
+    use_vertex = os.getenv("USE_VERTEX_AI", "false").lower() in ("true", "1", "yes")
+
+    if use_vertex:
+        _image_client = genai.Client(
+            vertexai=True,
+            project=os.getenv("GOOGLE_CLOUD_PROJECT"),
+            location="global",
+        )
+    else:
+        _image_client = get_client()
+
+    return _image_client

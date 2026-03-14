@@ -4,6 +4,31 @@ import { useState, useRef, useEffect } from "react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+type SpeechRecognitionConstructor = new () => SpeechRecognition;
+interface SpeechRecognitionEventLike extends Event {
+  results: SpeechRecognitionResultList;
+}
+interface SpeechRecognitionErrorEventLike extends Event {
+  error: string;
+}
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
+declare global {
+  interface Window {
+    SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
+  }
+}
+
 function resolveUrl(path: string | null): string | null {
   if (!path) return null;
   if (path.startsWith("http")) return path;
@@ -50,16 +75,89 @@ export default function LiveSession({
   const [starting, setStarting] = useState(false);
   const [attachedImage, setAttachedImage] = useState<File | null>(null);
   const [attachedPreview, setAttachedPreview] = useState<string>("");
+  const [speechSupported, setSpeechSupported] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const [lightbox, setLightbox] = useState<{
     url: string;
     roomName: string;
   } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const speechRecognitionRef = useRef<SpeechRecognition | null>(null);
+  const preSpeechTextRef = useRef<string>("");
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    const Recognition =
+      typeof window !== "undefined"
+        ? window.SpeechRecognition || window.webkitSpeechRecognition
+        : undefined;
+
+    if (!Recognition) {
+      setSpeechSupported(false);
+      return;
+    }
+
+    setSpeechSupported(true);
+    const recognition = new Recognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+
+    recognition.onresult = (event: SpeechRecognitionEventLike) => {
+      let transcript = "";
+      for (let i = 0; i < event.results.length; i++) {
+        transcript += event.results[i][0]?.transcript || "";
+      }
+      transcript = transcript.trim();
+      if (!transcript) return;
+
+      const base = preSpeechTextRef.current;
+      setInput(base ? `${base} ${transcript}` : transcript);
+    };
+
+    recognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
+      console.error("Speech recognition error:", event.error);
+      setIsListening(false);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    speechRecognitionRef.current = recognition;
+
+    return () => {
+      recognition.stop();
+      speechRecognitionRef.current = null;
+    };
+  }, []);
+
+  const toggleListening = () => {
+    if (!speechSupported || loading) return;
+
+    const recognition = speechRecognitionRef.current;
+    if (!recognition) return;
+
+    if (isListening) {
+      recognition.stop();
+      setIsListening(false);
+      return;
+    }
+
+    preSpeechTextRef.current = input;
+
+    try {
+      recognition.start();
+      setIsListening(true);
+    } catch (err) {
+      console.error("Unable to start speech recognition:", err);
+      setIsListening(false);
+    }
+  };
 
   const handleAttachImage = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -425,6 +523,23 @@ export default function LiveSession({
               </svg>
             </button>
 
+            {speechSupported && (
+              <button
+                onClick={toggleListening}
+                disabled={loading}
+                className={`px-3 py-3 border rounded-xl transition-colors disabled:opacity-50 ${
+                  isListening
+                    ? "bg-red-600/20 border-red-500/50 text-red-300 hover:bg-red-600/30"
+                    : "bg-gray-800 border-gray-700 text-gray-400 hover:text-white hover:bg-gray-700"
+                }`}
+                title={isListening ? "Stop voice input" : "Start voice input"}
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 18.75a6.75 6.75 0 006.75-6.75v-1.5a.75.75 0 011.5 0V12A8.25 8.25 0 0112.75 20.2V22.5a.75.75 0 01-1.5 0v-2.3A8.25 8.25 0 013.75 12v-1.5a.75.75 0 011.5 0V12A6.75 6.75 0 0012 18.75zm0-15a3.75 3.75 0 00-3.75 3.75V12a3.75 3.75 0 107.5 0V7.5A3.75 3.75 0 0012 3.75z" />
+                </svg>
+              </button>
+            )}
+
             <input
               type="text"
               value={input}
@@ -446,6 +561,14 @@ export default function LiveSession({
               Send
             </button>
           </div>
+          {isListening && (
+            <p className="mt-2 text-xs text-red-300">Listening... tap mic again to stop.</p>
+          )}
+          {!speechSupported && (
+            <p className="mt-2 text-xs text-gray-500">
+              Voice input is not supported in this browser. Use Chrome or Edge for mic input.
+            </p>
+          )}
         </div>
       </div>
 

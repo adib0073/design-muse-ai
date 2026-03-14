@@ -186,6 +186,9 @@ class DesignerAgent:
                 if room.room_name in updated_room_map:
                     update = updated_room_map[room.room_name]
                     update = self._fix_room_data(update)
+                    # Preserve the existing generated image URL — Gemini's
+                    # response won't include it because it only returns text.
+                    update.setdefault("generated_image_url", room.generated_image_url)
                     new_rooms.append(RoomDesign(**update))
                 else:
                     new_rooms.append(room)

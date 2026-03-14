@@ -189,6 +189,8 @@ class DesignOrchestrator:
             viz = await self.visualizer_agent.render_rooms_only(
                 design=result["updated_design"],
                 rooms=result["affected_rooms"],
+                changes=result.get("changes"),
+                reference_image=reference_image,
             )
             updated_renders = viz
 

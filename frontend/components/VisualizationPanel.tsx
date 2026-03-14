@@ -104,7 +104,7 @@ export default function VisualizationPanel({
             } else if (event.type === "stitching") {
               setClipProgress((prev) =>
                 prev
-                  ? { ...prev, phase: "stitching", room_name: "Stitching video..." }
+                  ? { ...prev, phase: "stitching", room_name: "Preparing video..." }
                   : null
               );
             } else if (event.type === "complete") {
@@ -141,8 +141,7 @@ export default function VisualizationPanel({
         </h2>
         <p className="text-sm text-gray-400 mb-4">
           These are the designs generated in the Design tab. The walkthrough
-          video will cover every space &mdash; one clip per image, stitched
-          together.
+          video will cover every space.
         </p>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mb-6">
@@ -174,8 +173,8 @@ export default function VisualizationPanel({
             <div className="flex items-center justify-between text-xs text-gray-400 mb-1.5">
               <span>
                 {clipProgress.phase === "stitching"
-                  ? "Stitching clips into walkthrough..."
-                  : `Generating clip ${clipProgress.current}/${clipProgress.total}: ${clipProgress.room_name}`}
+                  ? "Generating walkthrough video..."
+                  : `Generating video ${clipProgress.current}/${clipProgress.total}: ${clipProgress.room_name}`}
               </span>
               <span>{clipProgress.phase === "stitching" ? "99%" : `${progressPct}%`}</span>
             </div>
@@ -210,8 +209,8 @@ export default function VisualizationPanel({
               </svg>
               {clipProgress
                 ? clipProgress.phase === "stitching"
-                  ? "Stitching final video..."
-                  : `Clip ${clipProgress.current}/${clipProgress.total}...`
+                  ? "Preparing final video..."
+                  : `Progress - ${progressPct}%`
                 : "Starting..."}
             </span>
           ) : videoUrl ? (
