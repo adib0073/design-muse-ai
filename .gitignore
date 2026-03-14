@@ -37,3 +37,4 @@ generated/
 # Google Cloud
 service-account-key.json
 credentials.json
+docs/BLOG.md
