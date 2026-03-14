@@ -1,5 +1,6 @@
 """Sub-agent responsible for generating themed interior designs."""
 
+import asyncio
 import json
 import re
 
@@ -134,9 +135,10 @@ class DesignerAgent:
             floor_plan_image=floor_plan_image,
         )
 
-        for room in design_data.rooms:
-            image_url = await self.generate_room_image(room, theme)
-            room.generated_image_url = image_url
+        async def _gen(room):
+            room.generated_image_url = await self.generate_room_image(room, theme)
+
+        await asyncio.gather(*[_gen(r) for r in design_data.rooms])
 
         return design_data
 

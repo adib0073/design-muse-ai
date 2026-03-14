@@ -85,7 +85,7 @@ if [ "$DEPLOY_BACKEND" = true ]; then
     --memory 2Gi \
     --cpu 2 \
     --timeout 600 \
-    --set-env-vars "USE_VERTEX_AI=true,GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${REGION},GCS_BUCKET_NAME=${GCS_BUCKET_NAME:-designmuse-assets},BACKEND_API_KEY=${API_KEY}" \
+    --update-env-vars "USE_VERTEX_AI=true,GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${REGION},GCS_BUCKET_NAME=${GCS_BUCKET_NAME:-designmuse-assets},BACKEND_API_KEY=${API_KEY}" \
     --quiet
 fi
 

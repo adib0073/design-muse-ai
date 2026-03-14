@@ -9,6 +9,9 @@ from collections.abc import AsyncGenerator
 from google.genai import types
 
 from backend.services.client import get_client
+from backend.services.storage import StorageService
+
+IS_CLOUD_RUN = bool(os.getenv("K_SERVICE"))
 
 
 class VeoService:
@@ -19,6 +22,9 @@ class VeoService:
         self.clips_dir = "generated/videos/clips"
         os.makedirs(self.output_dir, exist_ok=True)
         os.makedirs(self.clips_dir, exist_ok=True)
+        self._storage = StorageService() if IS_CLOUD_RUN else None
+
+    MAX_CONCURRENT_CLIPS = 4
 
     async def generate_walkthrough_stream(
         self,
@@ -26,7 +32,7 @@ class VeoService:
         theme: str,
         style_notes: str = "",
     ) -> AsyncGenerator[dict, None]:
-        """Generate walkthrough with progress events per clip.
+        """Generate walkthrough with parallel clip generation.
 
         Yields:
           {"type": "progress", "data": {"current": N, "total": M, "room_name": "..."}}
@@ -35,25 +41,42 @@ class VeoService:
           {"type": "error", "message": "..."}
         """
         total = len(room_images)
-        clip_paths: list[str] = []
+        semaphore = asyncio.Semaphore(self.MAX_CONCURRENT_CLIPS)
+        completed = 0
+        results: dict[int, str | None] = {}
+        progress_queue: asyncio.Queue[dict] = asyncio.Queue()
 
-        for idx, (room_name, image_bytes) in enumerate(room_images, start=1):
-            yield {
-                "type": "progress",
-                "data": {"current": idx, "total": total, "room_name": room_name},
-            }
-
+        async def _gen_clip(idx: int, room_name: str, image_bytes: bytes):
             prompt = (
                 f"Slow cinematic camera pan through a {theme}-themed {room_name}. "
                 f"Smooth steady movement revealing interior details. "
                 f"Professional real estate video, natural lighting, warm atmosphere."
             )
-            clip_path = await self._generate_clip_from_image(image_bytes, prompt)
+            async with semaphore:
+                clip_path = await self._generate_clip_from_image(image_bytes, prompt)
             if clip_path:
-                clip_paths.append(clip_path)
-                print(f"  Clip {idx}/{total} done: {room_name}")
+                print(f"  Clip {idx + 1}/{total} done: {room_name}")
             else:
-                print(f"  Clip {idx}/{total} failed: {room_name}, skipping")
+                print(f"  Clip {idx + 1}/{total} failed: {room_name}, skipping")
+            results[idx] = clip_path
+            await progress_queue.put({
+                "type": "progress",
+                "data": {"current": len(results), "total": total, "room_name": room_name},
+            })
+
+        tasks = [
+            asyncio.create_task(_gen_clip(i, name, img))
+            for i, (name, img) in enumerate(room_images)
+        ]
+
+        while completed < total:
+            event = await progress_queue.get()
+            completed += 1
+            yield event
+
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+        clip_paths = [results[i] for i in range(total) if results.get(i)]
 
         if not clip_paths:
             yield {"type": "error", "message": "All clip generations failed."}
@@ -65,11 +88,11 @@ class VeoService:
             final_name = f"{uuid.uuid4().hex}.mp4"
             final_path = os.path.join(self.output_dir, final_name)
             os.rename(clip_paths[0], final_path)
-            video_url = f"/generated/videos/{final_name}"
         else:
-            video_url = self._stitch_clips(clip_paths)
+            final_path = self._stitch_clips_to_file(clip_paths)
 
-        if video_url:
+        if final_path:
+            video_url = await self._publish_video(final_path)
             yield {"type": "complete", "data": {"video_url": video_url}}
         else:
             yield {"type": "error", "message": "Video stitching failed."}
@@ -105,7 +128,8 @@ class VeoService:
 
             if operation.result and operation.result.generated_videos:
                 video = operation.result.generated_videos[0]
-                return self._save_video(video.video.video_bytes)
+                local_path = self._save_video(video.video.video_bytes)
+                return await self._publish_video(local_path.lstrip("/"))
 
         except Exception as e:
             print(f"Veo text-to-video failed: {e}")
@@ -147,7 +171,7 @@ class VeoService:
 
         return None
 
-    def _stitch_clips(self, clip_paths: list[str]) -> str | None:
+    def _stitch_clips_to_file(self, clip_paths: list[str]) -> str | None:
         concat_list = os.path.join(self.clips_dir, f"concat_{uuid.uuid4().hex}.txt")
         final_name = f"{uuid.uuid4().hex}.mp4"
         final_path = os.path.join(self.output_dir, final_name)
@@ -169,14 +193,14 @@ class VeoService:
                 ],
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=120,
             )
 
             if result.returncode != 0:
                 print(f"ffmpeg concat failed: {result.stderr}")
                 return None
 
-            return f"/generated/videos/{final_name}"
+            return final_path
 
         except Exception as e:
             print(f"Video stitching failed: {e}")
@@ -192,6 +216,21 @@ class VeoService:
                 os.remove(concat_list)
             except OSError:
                 pass
+
+    async def _publish_video(self, local_path: str) -> str:
+        """Upload to GCS on Cloud Run, or return a local URL for dev."""
+        if self._storage:
+            with open(local_path, "rb") as f:
+                video_bytes = f.read()
+            try:
+                url = await self._storage.upload_video(video_bytes)
+                os.remove(local_path)
+                return url
+            except Exception as e:
+                print(f"GCS upload failed, falling back to local: {e}")
+
+        filename = os.path.basename(local_path)
+        return f"/generated/videos/{filename}"
 
     def _save_video(self, video_bytes: bytes) -> str:
         filename = f"{uuid.uuid4().hex}.mp4"

@@ -1,5 +1,6 @@
 """Main ADK agent orchestrator that coordinates the design pipeline."""
 
+import asyncio
 import uuid
 from collections.abc import AsyncGenerator
 
@@ -53,8 +54,14 @@ class DesignOrchestrator:
 
             yield {"type": "design_text", "data": design.model_dump()}
 
-            for room in design.rooms:
-                image_url = await self.designer_agent.generate_room_image(room, theme)
+            async def _gen_image(room):
+                url = await self.designer_agent.generate_room_image(room, theme)
+                return room, url
+
+            tasks = [asyncio.create_task(_gen_image(r)) for r in design.rooms]
+
+            for coro in asyncio.as_completed(tasks):
+                room, image_url = await coro
                 room.generated_image_url = image_url
                 if image_url:
                     yield {
