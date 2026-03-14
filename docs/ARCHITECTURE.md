@@ -4,38 +4,7 @@
 
 DesignMuse AI uses a multi-agent architecture with specialized agents for each stage of the design pipeline. All models are accessed via Google Cloud Vertex AI.
 
-```
-┌──────────────────────────────────────────────────────┐
-│                  Frontend (Next.js 15)               │
-│  FloorPlanUpload │ ThemeSelector │ DesignResults     │
-│  LiveSession (chat + voice) │ VisualizationPanel     │
-└────────────────────────┬─────────────────────────────┘
-                         │ REST API + SSE Streams
-┌────────────────────────▼─────────────────────────────┐
-│               Backend (FastAPI)                      │
-│                                                      │
-│  ┌────────────────────────────────────────────────┐  │
-│  │            DesignOrchestrator                  │  │
-│  │                                                │  │
-│  │  FloorPlanAgent → DesignerAgent → Visualizer  │  │
-│  └────────────────────────────────────────────────┘  │
-│                                                      │
-│  Services:                                           │
-│    GeminiService  (text + JSON + image editing)      │
-│    ImagenService  (image generation + fallback)      │
-│    VeoService     (video generation + FFmpeg stitch) │
-│                                                      │
-│  Clients:                                            │
-│    get_client()       → Vertex AI (us-central1)      │
-│    get_image_client() → Vertex AI (global)           │
-└──────────────────────────────────────────────────────┘
-                         │
-         ┌───────────────┼───────────────┐
-         ▼               ▼               ▼
-   Gemini 2.5       Imagen 3         Veo 3.1
-   Flash /          fast-gen-001     fast-gen-001
-   Flash Image
-```
+[![Architecture](../frontend/public/high_level_design.jpg)](../frontend/public/high_level_design.jpg)
 
 ## Models Used
 
