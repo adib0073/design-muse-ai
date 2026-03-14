@@ -28,7 +28,7 @@ interface DesignResult {
   overall_style_notes: string;
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { apiFetch } from "@/lib/api";
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<AppTab>("design");
@@ -66,7 +66,7 @@ export default function Home() {
       formData.append("floor_plan", floorPlan);
       formData.append("theme", theme);
 
-      const res = await fetch(`${API_URL}/api/design/generate`, {
+      const res = await apiFetch("/api/design/generate", {
         method: "POST",
         body: formData,
       });

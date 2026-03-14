@@ -1,0 +1,8 @@
+node_modules
+frontend
+.env
+__pycache__
+*.pyc
+.git
+generated
+uploads

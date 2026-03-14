@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { API_URL } from "@/lib/api";
 
 interface RoomDesign {
   room_name: string;
@@ -178,8 +179,7 @@ export default function DesignResults({ result, imageProgress }: Props) {
 function getImageUrl(path: string | null): string | null {
   if (!path) return null;
   if (path.startsWith("http")) return path;
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-  return `${apiUrl}${path}`;
+  return `${API_URL}${path}`;
 }
 
 function RoomCard({

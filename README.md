@@ -101,6 +101,72 @@ npm run dev
 | `IMAGE_EDIT_MODELS` | No | Comma-separated Gemini image models (default: `gemini-2.5-flash-image,gemini-3.1-flash-image-preview`) |
 | `BACKEND_PORT` | No | Backend port (default: `8000`) |
 | `CORS_ORIGINS` | No | Allowed CORS origins (default: `http://localhost:3000`) |
+| `GCS_BUCKET_NAME` | No | GCS bucket for assets (default: `designmuse-assets`) |
+
+## Deploy to Google Cloud Run
+
+Deploy the app so anyone can access it via a public URL — no `localhost` required.
+
+### Prerequisites
+
+- `gcloud` CLI installed and authenticated (`gcloud auth login`)
+- Docker installed locally (for building images)
+- Vertex AI API enabled on your GCP project
+- A `.env` file with `GOOGLE_CLOUD_PROJECT` set
+
+### One-Command Deploy
+
+```bash
+chmod +x deploy.sh
+./deploy.sh
+```
+
+The script automatically:
+1. Enables required GCP APIs (Cloud Run, Artifact Registry, Vertex AI)
+2. Creates an Artifact Registry Docker repository
+3. Builds and pushes the **backend** image, deploys it to Cloud Run
+4. Builds the **frontend** image with the backend's Cloud Run URL baked in
+5. Deploys the **frontend** to Cloud Run
+6. Updates the backend's CORS to allow the frontend's Cloud Run origin
+
+After deployment, you'll see output like:
+
+```
+  https://designmuse-frontend-vezf2reura-uc.a.run.app
+```
+
+### Partial Deploys
+
+```bash
+./deploy.sh --backend-only     # redeploy backend only
+./deploy.sh --frontend-only    # redeploy frontend only (backend must already exist)
+```
+
+### IAM: Grant Vertex AI Access to Cloud Run
+
+The Cloud Run service account needs permission to call Vertex AI. Run this once:
+
+```bash
+PROJECT_ID=$(gcloud config get-value project)
+PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format="value(projectNumber)")
+SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member="serviceAccount:${SA}" \
+  --role="roles/aiplatform.user"
+
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member="serviceAccount:${SA}" \
+  --role="roles/storage.objectAdmin"
+```
+
+### Tear Down
+
+```bash
+REGION=us-central1
+gcloud run services delete designmuse-backend  --region $REGION --quiet
+gcloud run services delete designmuse-frontend --region $REGION --quiet
+```
 
 ## Architecture
 

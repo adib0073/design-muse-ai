@@ -3,11 +3,13 @@ import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.openapi.utils import get_openapi
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from backend.agents.orchestrator import DesignOrchestrator
 from backend.models.schemas import LiveSessionResponse
@@ -15,8 +17,38 @@ from backend.services.storage import StorageService
 
 load_dotenv()
 
+BACKEND_API_KEY = os.getenv("BACKEND_API_KEY", "").strip()
+IS_CLOUD_RUN = bool(os.getenv("K_SERVICE"))
+
 storage: StorageService | None = None
 orchestrator: DesignOrchestrator | None = None
+
+
+class ApiKeyMiddleware(BaseHTTPMiddleware):
+    """Reject /api/* requests when running on Cloud Run and header is missing/wrong.
+
+    Locally (no K_SERVICE env var) all requests pass through without auth.
+    On Cloud Run, every /api/* request must include a valid X-API-Key header.
+    """
+
+    PROTECTED_PREFIX = "/api/"
+
+    async def dispatch(self, request: Request, call_next):
+        if not IS_CLOUD_RUN or not BACKEND_API_KEY:
+            return await call_next(request)
+
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
+        if request.url.path.startswith(self.PROTECTED_PREFIX):
+            key = request.headers.get("X-API-Key", "")
+            if key != BACKEND_API_KEY:
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Invalid or missing API key"},
+                )
+
+        return await call_next(request)
 
 
 @asynccontextmanager
@@ -37,14 +69,33 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(ApiKeyMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000").split(","),
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*", "X-API-Key"],
 )
 
+if IS_CLOUD_RUN and BACKEND_API_KEY:
+    def custom_openapi():
+        if app.openapi_schema:
+            return app.openapi_schema
+        schema = get_openapi(
+            title=app.title, version=app.version,
+            description=app.description, routes=app.routes,
+        )
+        schema.setdefault("components", {})["securitySchemes"] = {
+            "ApiKeyAuth": {"type": "apiKey", "in": "header", "name": "X-API-Key"},
+        }
+        schema["security"] = [{"ApiKeyAuth": []}]
+        app.openapi_schema = schema
+        return schema
+
+    app.openapi = custom_openapi  # type: ignore[assignment]
+
+os.makedirs("generated", exist_ok=True)
 app.mount("/generated", StaticFiles(directory="generated"), name="generated")
 
 

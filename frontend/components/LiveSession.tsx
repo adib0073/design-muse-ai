@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { API_URL, apiFetch } from "@/lib/api";
 
 type SpeechRecognitionConstructor = new () => SpeechRecognition;
 interface SpeechRecognitionEventLike extends Event {
@@ -181,7 +181,7 @@ export default function LiveSession({
       formData.append("floor_plan", floorPlan);
       formData.append("theme", designResult.theme);
 
-      const res = await fetch(`${API_URL}/api/live/start`, {
+      const res = await apiFetch("/api/live/start", {
         method: "POST",
         body: formData,
       });
@@ -244,7 +244,7 @@ export default function LiveSession({
         formData.append("reference_image", imageFile);
       }
 
-      const res = await fetch(`${API_URL}/api/live/message`, {
+      const res = await apiFetch("/api/live/message", {
         method: "POST",
         body: formData,
       });
@@ -280,7 +280,7 @@ export default function LiveSession({
     if (!msg.renders || !onDesignUpdate) return;
 
     for (const render of msg.renders) {
-      await fetch(`${API_URL}/api/live/confirm`, {
+      await apiFetch("/api/live/confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -14,7 +14,7 @@ interface Props {
   onVideoUrlChange: (url: string | null) => void;
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { API_URL, apiFetch } from "@/lib/api";
 
 function resolveUrl(path: string | null): string | null {
   if (!path) return null;
@@ -62,7 +62,7 @@ export default function VisualizationPanel({
     try {
       const imageUrls = roomImages.map((r) => r.generated_image_url!);
 
-      const res = await fetch(`${API_URL}/api/visualize/walkthrough`, {
+      const res = await apiFetch("/api/visualize/walkthrough", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image_urls: imageUrls }),
