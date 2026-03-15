@@ -36,7 +36,6 @@ class StorageService:
 
         blob = self.bucket.blob(blob_name)
         blob.upload_from_string(file_bytes, content_type=content_type)
-        blob.make_public()
 
         return blob.public_url
 
